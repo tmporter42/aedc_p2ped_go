@@ -192,15 +192,15 @@ func printPacketInfo(packet gopacket.Packet) {
 }
 
 func initInterfaces(plain_dev, crypto_dev string) (plain_handle, crypto_handle *pcap.Handle){
-   in_handle, err := pcap.OpenLive(plain_dev, int32(*snaplen), true, pcap.BlockForever)
+   plain_handle, err := pcap.OpenLive(plain_dev, int32(*snaplen), true, pcap.BlockForever)
    if err != nil { panic(err) }
-   in_handle.SetDirection(pcap.DirectionIn)
+   plain_handle.SetDirection(pcap.DirectionIn)
    //defer in_handle.Close()
 
    /* Setup output device */
-   out_handle, err := pcap.OpenLive(crypto_dev, int32(*snaplen), true, pcap.BlockForever)
+   crypto_handle, err := pcap.OpenLive(crypto_dev, int32(*snaplen), true, pcap.BlockForever)
    if err != nil { panic(err) }
-   out_handle.SetDirection(pcap.DirectionIn)
+   crypto_handle.SetDirection(pcap.DirectionIn)
    //defer out_handle.Close()
 
    return
