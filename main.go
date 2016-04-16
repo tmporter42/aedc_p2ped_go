@@ -195,13 +195,13 @@ func initInterfaces(plain_dev, crypto_dev string) (plain_handle, crypto_handle *
    in_handle, err := pcap.OpenLive(plain_dev, int32(*snaplen), true, pcap.BlockForever)
    if err != nil { panic(err) }
    in_handle.SetDirection(pcap.DirectionIn)
-   defer in_handle.Close()
+   //defer in_handle.Close()
 
    /* Setup output device */
    out_handle, err := pcap.OpenLive(crypto_dev, int32(*snaplen), true, pcap.BlockForever)
    if err != nil { panic(err) }
    out_handle.SetDirection(pcap.DirectionIn)
-   defer out_handle.Close()
+   //defer out_handle.Close()
 
    return
 }
