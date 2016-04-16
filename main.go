@@ -191,14 +191,14 @@ func printPacketInfo(packet gopacket.Packet) {
 
 }
 
-func initInterfaces(plain_dev, crypto_dev string) (plain_handle, crypto_handle *pcap.Handle){
-   plain_handle, err := pcap.OpenLive(plain_dev, int32(*snaplen), true, pcap.BlockForever)
+func initInterfaces(plain_dev, crypto_dev string) (plain_handle, crypto_handle *pcap.Handle, err error){
+   plain_handle, err = pcap.OpenLive(plain_dev, int32(*snaplen), true, pcap.BlockForever)
    if err != nil { panic(err) }
    plain_handle.SetDirection(pcap.DirectionIn)
    //defer in_handle.Close()
 
    /* Setup output device */
-   crypto_handle, err := pcap.OpenLive(crypto_dev, int32(*snaplen), true, pcap.BlockForever)
+   crypto_handle, err = pcap.OpenLive(crypto_dev, int32(*snaplen), true, pcap.BlockForever)
    if err != nil { panic(err) }
    crypto_handle.SetDirection(pcap.DirectionIn)
    //defer out_handle.Close()
@@ -248,7 +248,7 @@ func main() {
    crypto_dev := flag.String("c", "eth1", "Encrypted interface")
 	flag.Parse()
 
-   plain_handle, crypto_handle := initInterfaces(*plain_dev, *crypto_dev)
+   plain_handle, crypto_handle, _ := initInterfaces(*plain_dev, *crypto_dev)
 
    // Start bidirectional traffic monitoring
 
