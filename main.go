@@ -60,22 +60,33 @@ func decrypt(data, key []byte) ([]byte, error) {
    return plaintext, nil
 }
 
-func handleIP(packet gopacket.Packet, ver int) {
+func handleIP(packet gopacket.Packet, ver int, isCrypto bool) (data []byte) {
    //fmt.Println("IP version ", ver)
    key := []byte("12345678901234567890123456789012")
-   ciphertext, err := encrypt(packet.Data(), key)
-   if err != nil {
-      panic(err);
+
+   if isCrypto {
+      ciphertext, err := encrypt(packet.Data(), key)
+      if err != nil { panic(err) }
+      return ciphertext
+   } else {
+      plaintext, err := decrypt(packet.Data(), key)
+      if err != nil { panic(err) }
+      return plaintext
    }
+
+   // ciphertext, err := encrypt(packet.Data(), key)
+   // if err != nil {
+   //    panic(err);
+   // }
 
    //fmt.Printf("\nENCRYPTED\n%0x\n", ciphertext)
 
-   plaintext, err := decrypt(ciphertext, key)
-   if err != nil {
-      panic(err);
-   }
+   // plaintext, err := decrypt(ciphertext, key)
+   // if err != nil {
+   //    panic(err);
+   // }
 
-   plaintext = plaintext
+   //plaintext = plaintext
 
    //fmt.Printf("\nDECRYPTED\n%0x\n", plaintext)
 }
@@ -84,10 +95,11 @@ func handleVLAN(packet gopacket.Packet) {
    //fmt.Println("VLAN")
 }
 
-func handlePacket(packet gopacket.Packet, in_handle *pcap.Handle, out_handle *pcap.Handle) {
+func handlePacket(packet gopacket.Packet, in_handle, out_handle *pcap.Handle, isCrypto bool) {
    //printPacketInfo(packet)
 
    packetCount++
+   data := packet.Data()
 
    ethernetLayer := packet.Layer(layers.LayerTypeEthernet)
    if ethernetLayer != nil {
@@ -98,10 +110,10 @@ func handlePacket(packet gopacket.Packet, in_handle *pcap.Handle, out_handle *pc
       hndl := reflect.Indirect(hndl_ptr)
       dev := hndl.FieldByName("device")
 
-      fmt.Println(packetCount, ".", dev, ":", etherType.String())
+      fmt.Println(packetCount, ":", dev, ":", etherType.String())
 
       if etherType == layers.EthernetTypeIPv4 {
-         //handleIP(packet, 4)
+         data = handleIP(packet, 4, isCrypto)
       } else if etherType == layers.EthernetTypeIPv6 {
          //handleIP(packet, 6)
       } else if etherType.String() == "VLAN" { // TODO: verify this ethertype with the PLC
@@ -112,7 +124,8 @@ func handlePacket(packet gopacket.Packet, in_handle *pcap.Handle, out_handle *pc
 
    }
 
-   retransmitPacket(packet.Data(), out_handle)
+   //retransmitPacket(packet.Data(), out_handle)
+   retransmitPacket(data, out_handle)
 }
 
 func retransmitPacket(data []byte, out_handle *pcap.Handle) {
@@ -241,7 +254,7 @@ func monitorInterface(in_handle, out_handle *pcap.Handle, isCrypto bool) {
       case packet := <-packets:
 
          /* Handle the captured packet */
-         handlePacket(packet, in_handle, out_handle)
+         handlePacket(packet, in_handle, out_handle, isCrypto)
 
          //fmt.Println(packet)
       }
