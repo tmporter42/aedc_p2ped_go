@@ -10,7 +10,7 @@ import (
    "io"
    "errors"
    "reflect" //Allows us to read private properties
-   "sync" //Mutexes
+   //"sync" //Mutexes
    "crypto/cipher"
    "crypto/aes"
    "crypto/rand"
@@ -18,8 +18,6 @@ import (
 
 var snaplen = flag.Int("s", 16<<10, "Snaplen for pcap")
 var packetCount = 0
-
-var count_mtx = &sync.Mutex{}
 
 func encrypt(data, key []byte) ([]byte, error) {
    block, err := aes.NewCipher(key)
@@ -89,9 +87,7 @@ func handleVLAN(packet gopacket.Packet) {
 func handlePacket(packet gopacket.Packet, in_handle *pcap.Handle, out_handle *pcap.Handle) {
    //printPacketInfo(packet)
 
-   count_mtx.Lock()
    packetCount++
-   count_mtx.Unlock()
 
    ethernetLayer := packet.Layer(layers.LayerTypeEthernet)
    if ethernetLayer != nil {
@@ -102,9 +98,7 @@ func handlePacket(packet gopacket.Packet, in_handle *pcap.Handle, out_handle *pc
       hndl := reflect.Indirect(hndl_ptr)
       dev := hndl.FieldByName("device")
 
-      count_mtx.Lock()
       fmt.Println(packetCount, ".", dev, ":", etherType.String())
-      count_mtx.Unlock()
 
       if etherType == layers.EthernetTypeIPv4 {
          //handleIP(packet, 4)
@@ -196,6 +190,7 @@ func printPacketInfo(packet gopacket.Packet) {
 
 }
 
+// TODO: initialize both interfaces concurrently using goroutines
 func initInterfaces(plain_dev, crypto_dev string) (plain_handle, crypto_handle *pcap.Handle, err error){
    plain_handle, err = pcap.OpenLive(plain_dev, int32(*snaplen), true, pcap.BlockForever)
    if err != nil { panic(err) }
@@ -211,7 +206,7 @@ func initInterfaces(plain_dev, crypto_dev string) (plain_handle, crypto_handle *
    return
 }
 
-func monitorInterface(in_handle, out_handle *pcap.Handle) {
+func monitorInterface(in_handle, out_handle *pcap.Handle, isCrypto bool) {
    
    /* Setup input device */
    // in_handle, err := pcap.OpenLive(in_dev, int32(*snaplen), true, pcap.BlockForever)
@@ -245,9 +240,9 @@ func monitorInterface(in_handle, out_handle *pcap.Handle) {
       case packet := <-packets:
 
          /* Handle the captured packet */
-         //handlePacket(packet, in_handle, out_handle)
+         handlePacket(packet, in_handle, out_handle)
 
-         fmt.Println(packet)
+         //fmt.Println(packet)
       }
    }
 }
@@ -262,11 +257,11 @@ func main() {
 
    // Start bidirectional traffic monitoring
 
-   //                  in device | out device | plain device
-   go monitorInterface(plain_handle, crypto_handle)
-   go monitorInterface(crypto_handle, plain_handle)
+   //                  in device | out device | is crypto
+   go monitorInterface(plain_handle, crypto_handle, true)
+   go monitorInterface(crypto_handle, plain_handle, false)
 
    /* Loop forever */
-   for{}
+   select{}
 
 }
