@@ -4,21 +4,22 @@ import (
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
-	//"github.com/google/gopacket/tcpassembly"
 	"fmt"
 	"flag"
    "strings"
    "io"
    "errors"
    "reflect" //Allows us to read private properties
+   "sync" //Mutexes
    "crypto/cipher"
    "crypto/aes"
    "crypto/rand"
-   //"encoding/base64"
 )
 
 var snaplen = flag.Int("s", 16<<10, "Snaplen for pcap")
 var packetCount = 0
+
+var count_mtx = &sync.Mutex{}
 
 func encrypt(data, key []byte) ([]byte, error) {
    block, err := aes.NewCipher(key)
@@ -88,7 +89,9 @@ func handleVLAN(packet gopacket.Packet) {
 func handlePacket(packet gopacket.Packet, in_handle *pcap.Handle, out_handle *pcap.Handle) {
    //printPacketInfo(packet)
 
+   count_mtx.Lock()
    packetCount++
+   count_mtx.Unlock()
 
    ethernetLayer := packet.Layer(layers.LayerTypeEthernet)
    if ethernetLayer != nil {
@@ -99,7 +102,9 @@ func handlePacket(packet gopacket.Packet, in_handle *pcap.Handle, out_handle *pc
       hndl := reflect.Indirect(hndl_ptr)
       dev := hndl.FieldByName("device")
 
+      count_mtx.Lock()
       fmt.Println(packetCount, ".", dev, ":", etherType.String())
+      count_mtx.Unlock()
 
       if etherType == layers.EthernetTypeIPv4 {
          //handleIP(packet, 4)
@@ -219,6 +224,10 @@ func monitorInterface(in_handle, out_handle *pcap.Handle) {
    // if err != nil { panic(err) }
    // out_handle.SetDirection(pcap.DirectionIn)
    // defer out_handle.Close()
+
+   if in_handle == nil || out_handle == nil {
+      return
+   }
 
    /* Get the name of the input device */
    hndl_ptr := reflect.ValueOf(in_handle)
