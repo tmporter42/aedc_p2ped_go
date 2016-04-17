@@ -245,8 +245,9 @@ func monitorInterface(in_handle, out_handle *pcap.Handle) {
       case packet := <-packets:
 
          /* Handle the captured packet */
-         handlePacket(packet, in_handle, out_handle)
+         //handlePacket(packet, in_handle, out_handle)
 
+         fmt.Println(packet)
       }
    }
 }
