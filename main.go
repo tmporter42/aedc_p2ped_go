@@ -112,7 +112,7 @@ func handlePacket(packet gopacket.Packet, in_handle *pcap.Handle, out_handle *pc
 
    }
 
-   //retransmitPacket(packet.Data(), out_handle)
+   retransmitPacket(packet.Data(), out_handle)
 }
 
 func retransmitPacket(data []byte, out_handle *pcap.Handle) {
@@ -192,6 +192,7 @@ func printPacketInfo(packet gopacket.Packet) {
 
 // TODO: initialize both interfaces concurrently using goroutines
 func initInterfaces(plain_dev, crypto_dev string) (plain_handle, crypto_handle *pcap.Handle, err error){
+   /* Setup input device */
    plain_handle, err = pcap.OpenLive(plain_dev, int32(*snaplen), true, pcap.BlockForever)
    if err != nil { panic(err) }
    plain_handle.SetDirection(pcap.DirectionIn)
