@@ -1,22 +1,37 @@
 package main
 
+/*
+ * Run with: sudo env "PATH=$PATH" "GOPATH=$GOPATH" go run main.go
+ */
+
 import (
-	"github.com/google/gopacket"
-	"github.com/google/gopacket/layers"
-	"github.com/google/gopacket/pcap"
 	"fmt"
-	"flag"
+	//"flag"
    "strings"
    "io"
+   "io/ioutil"
    "errors"
+   "strconv"
    "reflect" //Allows us to read private properties
    //"sync" //Mutexes
+
    "crypto/cipher"
    "crypto/aes"
    "crypto/rand"
+
+   "encoding/json"
+
+   "github.com/google/gopacket"
+   "github.com/google/gopacket/layers"
+   "github.com/google/gopacket/pcap"
 )
 
-var snaplen = flag.Int("s", 16<<10, "Snaplen for pcap")
+var plain_iface = "eth0"
+var crypto_iface = "eth1"
+var key = []byte("12345678901234567890123456789012")
+var full_encrypt = true
+var snaplen = 16<<10
+
 var packetCount = 0
 
 func encrypt(data, key []byte) ([]byte, error) {
@@ -60,10 +75,7 @@ func decrypt(data, key []byte) ([]byte, error) {
    return plaintext, nil
 }
 
-func handleIP(packet gopacket.Packet, ver int, isCrypto bool) (data []byte) {
-   //fmt.Println("IP version ", ver)
-   key := []byte("12345678901234567890123456789012")
-
+func handleRaw(packet gopacket.Packet, isCrypto bool) (data []byte) {
    if isCrypto {
       ciphertext, err := encrypt(packet.Data(), key)
       if err != nil { panic(err) }
@@ -72,6 +84,32 @@ func handleIP(packet gopacket.Packet, ver int, isCrypto bool) (data []byte) {
       plaintext, err := decrypt(packet.Data(), key)
       if err != nil { panic(err) }
       return plaintext
+   }   
+}
+
+func handleIP(packet gopacket.Packet, ver int, isCrypto bool) (data []byte) {
+   
+   //key := []byte("12345678901234567890123456789012")
+
+   newPacket := gopacket.NewPacket(
+      packet.Data(),
+      layers.LayerTypeEthernet,
+      gopacket.NoCopy,
+   )
+
+   ipLayer := newPacket.Layer(layers.LayerTypeIPv4)
+   ip := *ipLayer.(*layers.IPv4)
+
+   if isCrypto {
+      ciphertext, err := encrypt(ip.Payload, key)
+      if err != nil { panic(err) }
+      ip.Payload = ciphertext
+      //return ciphertext
+   } else {
+      plaintext, err := decrypt(ip.Payload, key)
+      if err != nil { panic(err) }
+      ip.Payload = plaintext
+      //return plaintext
    }
 
    // ciphertext, err := encrypt(packet.Data(), key)
@@ -89,6 +127,7 @@ func handleIP(packet gopacket.Packet, ver int, isCrypto bool) (data []byte) {
    //plaintext = plaintext
 
    //fmt.Printf("\nDECRYPTED\n%0x\n", plaintext)
+   return packet.Data()
 }
 
 func handleVLAN(packet gopacket.Packet) {
@@ -96,7 +135,6 @@ func handleVLAN(packet gopacket.Packet) {
 }
 
 func handlePacket(packet gopacket.Packet, in_handle, out_handle *pcap.Handle, isCrypto bool) {
-   //printPacketInfo(packet)
 
    packetCount++
    data := packet.Data()
@@ -112,19 +150,25 @@ func handlePacket(packet gopacket.Packet, in_handle, out_handle *pcap.Handle, is
 
       fmt.Println(packetCount, ":", dev, ":", etherType.String())
 
-      if etherType == layers.EthernetTypeIPv4 {
-         data = handleIP(packet, 4, isCrypto)
-      } else if etherType == layers.EthernetTypeIPv6 {
-         //handleIP(packet, 6)
-      } else if etherType.String() == "VLAN" { // TODO: verify this ethertype with the PLC
-         //handleVLAN(packet)
+      if full_encrypt {
+
+         data = handleRaw(packet, isCrypto)
+
       } else {
-         //fmt.Println("Strange ethertype: ", etherType)
-      }
+
+         if etherType == layers.EthernetTypeIPv4 {
+            data = handleIP(packet, 4, isCrypto)
+         } else if etherType == layers.EthernetTypeIPv6 {
+            //handleIP(packet, 6)
+         } else if etherType.String() == "Dot1Q" { // this is VLAN (IEEE 804.1Q)
+            //handleVLAN(packet)
+         } else {
+            //fmt.Println("Strange ethertype: ", etherType)
+         }
+      }      
 
    }
 
-   //retransmitPacket(packet.Data(), out_handle)
    retransmitPacket(data, out_handle)
 }
 
@@ -206,13 +250,13 @@ func printPacketInfo(packet gopacket.Packet) {
 // TODO: initialize both interfaces concurrently using goroutines
 func initInterfaces(plain_dev, crypto_dev string) (plain_handle, crypto_handle *pcap.Handle, err error){
    /* Setup input device */
-   plain_handle, err = pcap.OpenLive(plain_dev, int32(*snaplen), true, pcap.BlockForever)
+   plain_handle, err = pcap.OpenLive(plain_dev, int32(snaplen), true, pcap.BlockForever)
    if err != nil { panic(err) }
    plain_handle.SetDirection(pcap.DirectionIn)
    //defer in_handle.Close()
 
    /* Setup output device */
-   crypto_handle, err = pcap.OpenLive(crypto_dev, int32(*snaplen), true, pcap.BlockForever)
+   crypto_handle, err = pcap.OpenLive(crypto_dev, int32(snaplen), true, pcap.BlockForever)
    if err != nil { panic(err) }
    crypto_handle.SetDirection(pcap.DirectionIn)
    //defer out_handle.Close()
@@ -220,19 +264,41 @@ func initInterfaces(plain_dev, crypto_dev string) (plain_handle, crypto_handle *
    return
 }
 
-func monitorInterface(in_handle, out_handle *pcap.Handle, isCrypto bool) {
-   
-   /* Setup input device */
-   // in_handle, err := pcap.OpenLive(in_dev, int32(*snaplen), true, pcap.BlockForever)
-   // if err != nil { panic(err) }
-   // in_handle.SetDirection(pcap.DirectionIn)
-   // defer in_handle.Close()
+func initConfig() {
 
-   /* Setup output device */
-   // out_handle, err := pcap.OpenLive(out_dev, int32(*snaplen), true, pcap.BlockForever)
-   // if err != nil { panic(err) }
-   // out_handle.SetDirection(pcap.DirectionIn)
-   // defer out_handle.Close()
+   data, err := ioutil.ReadFile("./config.json")
+   if err != nil { panic(err) }
+
+   var dat map[string]interface{}
+
+   if err := json.Unmarshal(data, &dat); err != nil {
+      panic(err)
+   }
+
+   if dat["key"] != nil {
+      key = []byte(dat["key"].(string))   
+   }
+
+   if dat["plain_iface"] != nil {
+      plain_iface = dat["plain_iface"].(string)   
+   }
+
+   if dat["crypto_iface"] != nil {
+      crypto_iface = dat["crypto_iface"].(string)   
+   }   
+
+   if dat["full_encrypt"] != nil {
+      full_encrypt, err = strconv.ParseBool(dat["full_encrypt"].(string))
+      if err != nil {
+         panic(err)
+      }
+   }
+
+   fmt.Println(key, plain_iface, crypto_iface)
+   
+}
+
+func monitorInterface(in_handle, out_handle *pcap.Handle, isCrypto bool) {
 
    if in_handle == nil || out_handle == nil {
       return
@@ -262,20 +328,20 @@ func monitorInterface(in_handle, out_handle *pcap.Handle, isCrypto bool) {
 }
 
 func main() {
-   /* Get command line arguments */
-   plain_dev := flag.String("p", "eth0", "Plaintext interface")
-   crypto_dev := flag.String("c", "eth1", "Encrypted interface")
-	flag.Parse()
 
-   plain_handle, crypto_handle, _ := initInterfaces(*plain_dev, *crypto_dev)
+   /* Read settings from config.json file */
+   initConfig()
 
-   // Start bidirectional traffic monitoring
+   /* Initialize the interfaces */
+   plain_handle, crypto_handle, _ := initInterfaces(plain_iface, crypto_iface)
+
+   /* Start bidirectional traffic monitoring */
 
    //                  in device | out device | is crypto
    go monitorInterface(plain_handle, crypto_handle, true)
    go monitorInterface(crypto_handle, plain_handle, false)
 
-   /* Loop forever */
+   /* Sleep forever */
    select{}
 
 }
