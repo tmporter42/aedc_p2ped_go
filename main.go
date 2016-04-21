@@ -6,14 +6,12 @@ package main
 
 import (
 	"fmt"
-	//"flag"
    "strings"
    "io"
    "io/ioutil"
    "errors"
    "strconv"
    "reflect" //Allows us to read private properties
-   //"sync" //Mutexes
 
    "crypto/cipher"
    "crypto/aes"
@@ -31,6 +29,7 @@ var crypto_iface = "eth1"
 var key = []byte("12345678901234567890123456789012")
 var full_encrypt = true
 var snaplen = 16<<10
+var headless_mode = false
 
 var packetCount = 0
 
@@ -88,8 +87,6 @@ func handleRaw(packet gopacket.Packet, isCrypto bool) (data []byte) {
 }
 
 func handleIP(packet gopacket.Packet, ver int, isCrypto bool) (data []byte) {
-   
-   //key := []byte("12345678901234567890123456789012")
 
    newPacket := gopacket.NewPacket(
       packet.Data(),
@@ -104,34 +101,17 @@ func handleIP(packet gopacket.Packet, ver int, isCrypto bool) (data []byte) {
       ciphertext, err := encrypt(ip.Payload, key)
       if err != nil { panic(err) }
       ip.Payload = ciphertext
-      //return ciphertext
    } else {
       plaintext, err := decrypt(ip.Payload, key)
       if err != nil { panic(err) }
       ip.Payload = plaintext
-      //return plaintext
    }
 
-   // ciphertext, err := encrypt(packet.Data(), key)
-   // if err != nil {
-   //    panic(err);
-   // }
-
-   //fmt.Printf("\nENCRYPTED\n%0x\n", ciphertext)
-
-   // plaintext, err := decrypt(ciphertext, key)
-   // if err != nil {
-   //    panic(err);
-   // }
-
-   //plaintext = plaintext
-
-   //fmt.Printf("\nDECRYPTED\n%0x\n", plaintext)
    return packet.Data()
 }
 
 func handleVLAN(packet gopacket.Packet) {
-   //fmt.Println("VLAN")
+   
 }
 
 func handlePacket(packet gopacket.Packet, in_handle, out_handle *pcap.Handle, isCrypto bool) {
@@ -142,13 +122,14 @@ func handlePacket(packet gopacket.Packet, in_handle, out_handle *pcap.Handle, is
    ethernetLayer := packet.Layer(layers.LayerTypeEthernet)
    if ethernetLayer != nil {
       ethernetPacket, _ := ethernetLayer.(*layers.Ethernet)
-      etherType := ethernetPacket.EthernetType
+      etherType := ethernetPacket.EthernetType      
 
-      hndl_ptr := reflect.ValueOf(in_handle)
-      hndl := reflect.Indirect(hndl_ptr)
-      dev := hndl.FieldByName("device")
-
-      fmt.Println(packetCount, ":", dev, ":", etherType.String())
+      if !headless_mode {
+         hndl_ptr := reflect.ValueOf(in_handle)
+         hndl := reflect.Indirect(hndl_ptr)
+         dev := hndl.FieldByName("device")
+         fmt.Println(packetCount, ":", dev, ":", etherType.String())
+      }
 
       if full_encrypt {
 
@@ -294,7 +275,12 @@ func initConfig() {
       }
    }
 
-   fmt.Println(key, plain_iface, crypto_iface)
+   if dat["headless_mode"] != nil {
+      headless_mode, err = strconv.ParseBool(dat["headless_mode"].(string))
+      if err != nil {
+         panic(err)
+      }
+   } 
    
 }
 
@@ -302,14 +288,16 @@ func monitorInterface(in_handle, out_handle *pcap.Handle, isCrypto bool) {
 
    if in_handle == nil || out_handle == nil {
       return
+   }   
+
+   if !headless_mode {
+      /* Get the name of the input device */
+      hndl_ptr := reflect.ValueOf(in_handle)
+      hndl := reflect.Indirect(hndl_ptr)
+      in_dev := hndl.FieldByName("device")
+
+      fmt.Println("Listening on", in_dev)
    }
-
-   /* Get the name of the input device */
-   hndl_ptr := reflect.ValueOf(in_handle)
-   hndl := reflect.Indirect(hndl_ptr)
-   in_dev := hndl.FieldByName("device")
-
-   fmt.Println("Listening on", in_dev)
 
    /* Create packet capture channel (infinite) */
    packetSource := gopacket.NewPacketSource(in_handle, in_handle.LinkType())
@@ -322,7 +310,6 @@ func monitorInterface(in_handle, out_handle *pcap.Handle, isCrypto bool) {
          /* Handle the captured packet */
          handlePacket(packet, in_handle, out_handle, isCrypto)
 
-         //fmt.Println(packet)
       }
    }
 }
