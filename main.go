@@ -155,6 +155,10 @@ func handlePacket(packet gopacket.Packet, in_handle, out_handle *pcap.Handle, is
 
    }
 
+   if !headless_mode {
+      fmt.Println(packetCount)
+   }
+   
    retransmitPacket(data, out_handle)
 }
 
