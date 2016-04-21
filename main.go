@@ -275,9 +275,9 @@ func initConfig() {
 
    if dat["encrypt_mode"] != nil {
       encrypt_mode = dat["encrypt_mode"].(string)
-      if encrypt_mode != "full" || encrypt_mode != "none" || encrypt_mode != "payload" {
-         panic(nil)
-      }
+      // if encrypt_mode != "full" || encrypt_mode != "none" || encrypt_mode != "payload" {
+      //    panic("Encrypt mode " + encrypt_mode + " invalid.")
+      // }
    }
 
    if dat["headless_mode"] != nil {
