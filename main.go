@@ -27,7 +27,7 @@ import (
 var plain_iface = "eth0"
 var crypto_iface = "eth1"
 var key = []byte("12345678901234567890123456789012")
-var full_encrypt = true
+var encrypt_mode = "full"
 var snaplen = 16<<10
 var headless_mode = false
 
@@ -119,34 +119,39 @@ func handlePacket(packet gopacket.Packet, in_handle, out_handle *pcap.Handle, is
    packetCount++
    data := packet.Data()
 
-   ethernetLayer := packet.Layer(layers.LayerTypeEthernet)
-   if ethernetLayer != nil {
-      ethernetPacket, _ := ethernetLayer.(*layers.Ethernet)
-      etherType := ethernetPacket.EthernetType      
+   if encrypt_mode != "none" {
 
-      if !headless_mode {
-         hndl_ptr := reflect.ValueOf(in_handle)
-         hndl := reflect.Indirect(hndl_ptr)
-         dev := hndl.FieldByName("device")
-         fmt.Println(packetCount, ":", dev, ":", etherType.String())
-      }
+      ethernetLayer := packet.Layer(layers.LayerTypeEthernet)
+      if ethernetLayer != nil {
+         ethernetPacket, _ := ethernetLayer.(*layers.Ethernet)
+         etherType := ethernetPacket.EthernetType      
 
-      if full_encrypt {
-
-         data = handleRaw(packet, isCrypto)
-
-      } else {
-
-         if etherType == layers.EthernetTypeIPv4 {
-            data = handleIP(packet, 4, isCrypto)
-         } else if etherType == layers.EthernetTypeIPv6 {
-            //handleIP(packet, 6)
-         } else if etherType.String() == "Dot1Q" { // this is VLAN (IEEE 804.1Q)
-            //handleVLAN(packet)
-         } else {
-            //fmt.Println("Strange ethertype: ", etherType)
+         if !headless_mode {
+            hndl_ptr := reflect.ValueOf(in_handle)
+            hndl := reflect.Indirect(hndl_ptr)
+            dev := hndl.FieldByName("device")
+            fmt.Println(packetCount, ":", dev, ":", etherType.String())
          }
-      }      
+
+         if encrypt_mode == "full" {
+
+            data = handleRaw(packet, isCrypto)
+
+         } else if encrypt_mode == "packet" {
+
+            if etherType == layers.EthernetTypeIPv4 {
+               data = handleIP(packet, 4, isCrypto)
+            } else if etherType == layers.EthernetTypeIPv6 {
+               //handleIP(packet, 6)
+            } else if etherType.String() == "Dot1Q" { // this is VLAN (IEEE 804.1Q)
+               //handleVLAN(packet)
+            } else {
+               //fmt.Println("Strange ethertype: ", etherType)
+            }
+
+         } // else encrypt_mode unknown
+
+      }
 
    }
 
@@ -268,10 +273,10 @@ func initConfig() {
       crypto_iface = dat["crypto_iface"].(string)   
    }   
 
-   if dat["full_encrypt"] != nil {
-      full_encrypt, err = strconv.ParseBool(dat["full_encrypt"].(string))
-      if err != nil {
-         panic(err)
+   if dat["encrypt_mode"] != nil {
+      encrypt_mode = dat["encrypt_mode"].(string)
+      if encrypt_mode != "full" || encrypt_mode != "none" || encrypt_mode != "payload" {
+         panic(nil)
       }
    }
 

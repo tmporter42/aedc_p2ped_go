@@ -2,6 +2,6 @@
    "key": "12345678901234567890123456789012",
    "plain_iface": "wlan0",
    "crypto_iface": "lo",
-   "full_encrypt": "true",
+   "encrypt_mode": "none",
    "headless_mode": "true"
 }
